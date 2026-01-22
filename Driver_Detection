@@ -1,0 +1,81 @@
+# Driver Drowsiness Detection (Eye-based) using OpenCV + dlib
+# Requirements: opencv-python, dlib, imutils, scipy
+
+import cv2
+import dlib
+import time
+from scipy.spatial import distance
+from imutils import face_utils
+import imutils
+
+# ---------- PARAMETERS ----------
+EYE_AR_THRESH = 0.25
+EYE_AR_CONSEC_FRAMES = 20
+
+# ---------- FUNCTIONS ----------
+def eye_aspect_ratio(eye):
+    A = distance.euclidean(eye[1], eye[5])
+    B = distance.euclidean(eye[2], eye[4])
+    C = distance.euclidean(eye[0], eye[3])
+    return (A + B) / (2.0 * C)
+
+# ---------- LOAD MODELS ----------
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+
+(lStart, lEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
+(rStart, rEnd) = face_utils.FACIAL_LANDMARKS_IDXS["right_eye"]
+
+# ---------- VARIABLES ----------
+COUNTER = 0
+ALARM_ON = False
+
+# ---------- VIDEO STREAM ----------
+cap = cv2.VideoCapture(0)
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    frame = imutils.resize(frame, width=640)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    rects = detector(gray, 0)
+
+    for rect in rects:
+        shape = predictor(gray, rect)
+        shape = face_utils.shape_to_np(shape)
+
+        leftEye = shape[lStart:lEnd]
+        rightEye = shape[rStart:rEnd]
+
+        leftEAR = eye_aspect_ratio(leftEye)
+        rightEAR = eye_aspect_ratio(rightEye)
+
+        ear = (leftEAR + rightEAR) / 2.0
+
+        leftHull = cv2.convexHull(leftEye)
+        rightHull = cv2.convexHull(rightEye)
+        cv2.drawContours(frame, [leftHull], -1, (0, 255, 0), 1)
+        cv2.drawContours(frame, [rightHull], -1, (0, 255, 0), 1)
+
+        if ear < EYE_AR_THRESH:
+            COUNTER += 1
+
+            if COUNTER >= EYE_AR_CONSEC_FRAMES:
+                cv2.putText(frame, "DROWSINESS DETECTED!", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        else:
+            COUNTER = 0
+
+        cv2.putText(frame, f"EAR: {ear:.2f}", (480, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+    cv2.imshow("Driver Drowsiness Detection", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
